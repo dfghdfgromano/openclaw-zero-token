@@ -1045,6 +1045,10 @@
     "./plugin-sdk/askonce": {
       "types": "./dist/plugin-sdk/askonce.d.ts",
       "default": "./dist/plugin-sdk/askonce.js"
+    },
+    "./plugin-sdk/web-models": {
+      "types": "./dist/plugin-sdk/web-models.d.ts",
+      "default": "./dist/plugin-sdk/web-models.js"
     }
   },
   "scripts": {
