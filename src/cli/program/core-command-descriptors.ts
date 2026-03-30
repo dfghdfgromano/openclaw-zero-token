@@ -67,6 +67,11 @@ export const CORE_CLI_COMMAND_DESCRIPTORS = [
     hasSubcommands: true,
   },
   {
+    name: "webauth",
+    description: "Authorize Web AI models (Claude, ChatGPT, DeepSeek, etc.)",
+    hasSubcommands: false,
+  },
+  {
     name: "status",
     description: "Show channel health and recent session recipients",
     hasSubcommands: false,
