@@ -5,7 +5,7 @@
 `linuxhsj/openclaw-zero-token` 是在官方 `openclaw/openclaw` 基础上添加了 web provider 功能的 fork，
 支持通过浏览器 Cookie/Token 直接调用 Claude、ChatGPT、DeepSeek 等平台，无需 API Key。
 
-每次同步上游代码后，以下两处修复可能需要重新确认。
+本文档记录了维护此 fork 所需的三处修复，以及每次同步上游后的检查流程。
 
 ---
 
@@ -19,13 +19,12 @@
 Invalid config at .openclaw-upstream-state/openclaw.json:
 - models.providers.deepseek-web.api: Invalid option: expected one of "openai-completions"|...
 - models.providers.claude-web.api: Invalid option: expected one of "openai-completions"|...
-...（所有 web provider 均报错）
 ```
 
 ### 根本原因
 
-`src/config/types.models.ts` 的 `MODEL_APIS` 数组只包含标准 API 类型，
-不包含 zero-token fork 新增的 web provider 类型，导致 config 校验失败。
+`src/config/types.models.ts` 的 `MODEL_APIS` 数组只包含标准 API 类型，不包含 zero-token fork
+新增的 web provider 类型，导致 config 校验失败。
 
 ### 修复方法
 
@@ -50,8 +49,7 @@ Invalid config at .openclaw-upstream-state/openclaw.json:
 
 **文件 2：`src/config/schema.base.generated.ts`**
 
-搜索文件中两处 `api` 字段的 `enum` 数组（约在第 1033 行和第 1137 行），
-同样追加上述 web provider 类型。
+搜索文件中两处 `api` 字段的 `enum` 数组（约在第 1033 行和第 1137 行），同样追加上述类型。
 
 ### 验证
 
@@ -75,8 +73,7 @@ error: unknown command 'webauth'
 
 ### 根本原因
 
-`src/cli/program/register.webauth.ts` 文件存在，但没有在主程序命令注册表中引用，
-导致 CLI 不认识这个命令。
+`src/cli/program/register.webauth.ts` 存在，但没有在主程序命令注册表中引用。
 
 ### 修复方法
 
@@ -114,26 +111,82 @@ error: unknown command 'webauth'
 
 ---
 
-## 更新后检查流程
+## 修复三：web-models 插件无法加载
 
-每次 `git pull` 同步上游后，运行：
+### 问题现象
 
-```bash
-node openclaw.mjs config validate
+Gateway 日志中反复出现：
+
+```
+[plugins] web-models failed to load from extensions/web-models/index.ts:
+Error: Cannot find module 'src/plugin-sdk/root-alias.cjs/web-models'
 ```
 
-如果报 `Invalid option` 错误，重新应用修复一。
-如果 `webauth` 命令消失，重新应用修复二。
+以及调用 web provider 时报错：
+
+```
+Error: No API provider registered for api: gemini-web
+```
+
+### 根本原因
+
+`extensions/web-models/index.ts` 插件依赖 `openclaw/plugin-sdk/web-models`，
+但 `scripts/lib/plugin-sdk-entrypoints.json` 中没有 `web-models` 条目，
+导致构建时不生成 `dist/plugin-sdk/web-models.js`，`package.json` 的 exports 也缺少对应路径。
+
+### 修复方法
+
+**文件：`scripts/lib/plugin-sdk-entrypoints.json`**
+
+在数组中添加 `"web-models"`，然后重新构建：
+
+```bash
+node scripts/copy-plugin-sdk-root-alias.mjs
+node scripts/tsdown-build.mjs
+```
+
+### 验证
+
+```bash
+# 确认文件存在
+ls dist/plugin-sdk/web-models.js
+
+# 确认 package.json exports 有这条
+node -e "const p=require('./package.json'); console.log(p.exports['./plugin-sdk/web-models'])"
+```
+
+### 注意
+
+`package.json` 是上游每次更新都会修改的文件，合并时容易产生冲突。
+**更新脚本已内置自动检测和修复**，如果合并后 `web-models.js` 丢失会自动重建。
 
 ---
 
-## 维护建议
+## 更新后自动检查流程
 
-将此 repo fork 到自己的 GitHub，把这些修复作为独立 commit 保留。
-上游更新时执行：
+`[Update]` 按钮脚本已内置以下检查，无需手动操作：
+
+1. `config validate` — 检测修复一是否失效
+2. 检查 `package.json` exports 中是否有 `./plugin-sdk/web-models`
+3. 检查 `dist/plugin-sdk/web-models.js` 是否存在
+4. 如果 2 或 3 失败，自动重新运行 `copy-plugin-sdk-root-alias` + `tsdown-build`
+
+---
+
+## 手动同步上游流程
 
 ```bash
-git fetch upstream
-git merge upstream/main
-# 解决冲突时保留本文件中的修改
+git fetch origin
+git merge origin/main
+# 解决冲突时注意保留以下文件中的修改：
+#   src/config/types.models.ts
+#   src/config/schema.base.generated.ts
+#   src/cli/program/command-registry.ts
+#   src/cli/program/core-command-descriptors.ts
+#   scripts/lib/plugin-sdk-entrypoints.json
+
+pnpm install
+node scripts/copy-plugin-sdk-root-alias.mjs
+node scripts/tsdown-build.mjs
+node openclaw.mjs config validate
 ```
